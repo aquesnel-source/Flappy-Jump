@@ -2,11 +2,12 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flappy Bird Fixed</title>
+<title>Fair Flappy Bird</title>
 
 <style>
 body { margin:0; overflow:hidden; background:#222; }
 canvas { display:block; margin:auto; }
+
 #ui {
   position:absolute;
   top:10px;
@@ -14,6 +15,7 @@ canvas { display:block; margin:auto; }
   display:flex;
   gap:10px;
 }
+
 button {
   font-size:18px;
   padding:8px 12px;
@@ -44,20 +46,19 @@ canvas.height = HEIGHT;
 // ---------------- TIME ----------------
 let lastTime = 0;
 
-// ---------------- GAME SETTINGS ----------------
-const GRAVITY = 1200;
-const JUMP = -420;
-const PIPE_SPEED = 220;
+// ---------------- GAME CONSTANTS ----------------
+const GRAVITY = 1400;
+const JUMP = -450;
+const PIPE_SPEED = 260;
 
+const PIPE_WIDTH = 60;
+const PIPE_GAP = 170;
+
+// ---------------- STATE ----------------
 let bird = {
   x: WIDTH * 0.25,
   y: HEIGHT / 2,
   vel: 0
-};
-
-let loverBird = {
-  x: WIDTH * 0.8,
-  y: HEIGHT / 2
 };
 
 let pipes = [];
@@ -66,9 +67,11 @@ let score = 0;
 
 let alive = true;
 let paused = false;
-let gameEnded = false;
 
 let pipeTimer = 0;
+
+// ---------------- SOUND ----------------
+const passSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
 
 // ---------------- CLOUDS ----------------
 for (let i = 0; i < 6; i++) {
@@ -76,29 +79,13 @@ for (let i = 0; i < 6; i++) {
     x: Math.random()*WIDTH,
     y: Math.random()*HEIGHT*0.5,
     size: 40 + Math.random()*40,
-    speed: 20 + Math.random()*40
+    speed: 25 + Math.random()*35
   });
-}
-
-// ---------------- SOUND ----------------
-const passSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
-
-// ---------------- PIPE ----------------
-function createPipe() {
-  let gap = 160 + Math.random()*80;
-  let top = 50 + Math.random()*(HEIGHT - gap - 150);
-
-  return {
-    x: WIDTH,
-    top: top,
-    bottom: top + gap,
-    passed: false
-  };
 }
 
 // ---------------- INPUT ----------------
 function flap() {
-  if (!paused && alive && !gameEnded) {
+  if (alive && !paused) {
     bird.vel = JUMP;
   } else if (!alive) {
     resetGame();
@@ -122,32 +109,53 @@ document.getElementById("fsBtn").onclick = () => {
 
 // ---------------- RESET ----------------
 function resetGame() {
-  bird.y = HEIGHT/2;
+  bird.y = HEIGHT / 2;
   bird.vel = 0;
   pipes = [];
   score = 0;
   alive = true;
-  gameEnded = false;
 }
 
-// ---------------- DRAW BIRD (WITH EYES RESTORED 🐤) ----------------
-function drawBird(x, y) {
-  ctx.save();
-  ctx.translate(x, y);
+// ---------------- SAFE PIPE ----------------
+function createPipe() {
 
-  // body
+  let maxTop = HEIGHT - PIPE_GAP - 80;
+  let minTop = 80;
+
+  let top = minTop + Math.random() * (maxTop - minTop);
+
+  // safety clamp (still fair, no impossible pipes)
+  let gapCenter = top + PIPE_GAP / 2;
+
+  if (gapCenter < HEIGHT * 0.2 || gapCenter > HEIGHT * 0.8) {
+    gapCenter = HEIGHT / 2;
+    top = gapCenter - PIPE_GAP / 2;
+  }
+
+  return {
+    x: WIDTH,
+    top: top,
+    bottom: top + PIPE_GAP,
+    passed: false
+  };
+}
+
+// ---------------- DRAW BIRD (RESTORED) ----------------
+function drawBird() {
+  ctx.save();
+  ctx.translate(bird.x, bird.y);
+
   ctx.fillStyle = "yellow";
   ctx.beginPath();
   ctx.ellipse(0,0,25,18,0,0,Math.PI*2);
   ctx.fill();
 
-  // eye white
+  // eye
   ctx.fillStyle = "white";
   ctx.beginPath();
   ctx.arc(10,-5,5,0,Math.PI*2);
   ctx.fill();
 
-  // pupil
   ctx.fillStyle = "black";
   ctx.beginPath();
   ctx.arc(12,-5,2,0,Math.PI*2);
@@ -164,19 +172,13 @@ function drawBird(x, y) {
   ctx.restore();
 }
 
-// ---------------- BACKGROUND ----------------
-function drawBackground(dt) {
-  let grad = ctx.createLinearGradient(0,0,0,HEIGHT);
-  grad.addColorStop(0,"#87CEEB");
-  grad.addColorStop(1,"#E0F7FF");
-
-  ctx.fillStyle = grad;
-  ctx.fillRect(0,0,WIDTH,HEIGHT);
-
+// ---------------- CLOUDS ----------------
+function drawClouds(dt) {
   ctx.fillStyle = "white";
 
   for (let c of clouds) {
     c.x -= c.speed * dt;
+
     if (c.x < -c.size) c.x = WIDTH + c.size;
 
     ctx.beginPath();
@@ -188,10 +190,10 @@ function drawBackground(dt) {
 }
 
 // ---------------- PIPES ----------------
-function drawPipes(p) {
+function drawPipe(p) {
   ctx.fillStyle = "#2ecc71";
-  ctx.fillRect(p.x,0,60,p.top);
-  ctx.fillRect(p.x,p.bottom,60,HEIGHT);
+  ctx.fillRect(p.x, 0, PIPE_WIDTH, p.top);
+  ctx.fillRect(p.x, p.bottom, PIPE_WIDTH, HEIGHT);
 }
 
 // ---------------- LOOP ----------------
@@ -201,31 +203,36 @@ function loop(time) {
   let dt = (time - lastTime) / 1000;
   lastTime = time;
 
-  drawBackground(dt);
+  // background
+  ctx.fillStyle = "#87CEEB";
+  ctx.fillRect(0,0,WIDTH,HEIGHT);
 
-  if (!paused && alive && !gameEnded) {
+  drawClouds(dt);
 
-    // bird physics
+  if (!paused && alive) {
+
+    // bird physics (FRAME-INDEPENDENT)
     bird.vel += GRAVITY * dt;
     bird.y += bird.vel * dt;
 
-    // pipe spawn
+    // spawn pipes
     pipeTimer += dt;
-    if (pipeTimer > 1.5) {
+    if (pipeTimer > 1.4) {
       pipes.push(createPipe());
       pipeTimer = 0;
     }
 
-    // pipes
+    // update pipes
     for (let p of pipes) {
       p.x -= PIPE_SPEED * dt;
-      drawPipes(p);
+
+      drawPipe(p);
 
       // collision
       if (
-        bird.x < p.x+60 &&
-        bird.x+30 > p.x &&
-        (bird.y < p.top || bird.y+30 > p.bottom)
+        bird.x < p.x + PIPE_WIDTH &&
+        bird.x + 30 > p.x &&
+        (bird.y < p.top || bird.y + 30 > p.bottom)
       ) {
         alive = false;
       }
@@ -234,6 +241,7 @@ function loop(time) {
       if (!p.passed && p.x < bird.x) {
         p.passed = true;
         score++;
+
         passSound.currentTime = 0;
         passSound.play();
       }
@@ -244,28 +252,13 @@ function loop(time) {
     if (bird.y < 0 || bird.y > HEIGHT) {
       alive = false;
     }
-
-    // ---------------- ENDING CONDITION ----------------
-    if (score >= 20000) {
-      gameEnded = true;
-    }
   }
 
-  // ---------------- DRAW BIRDS ----------------
-  drawBird(bird.x, bird.y);
+  // draw
+  for (let p of pipes) drawPipe(p);
+  drawBird();
 
-  if (gameEnded) {
-    drawBird(loverBird.x, loverBird.y);
-
-    ctx.fillStyle = "black";
-    ctx.font = "40px Arial";
-    ctx.fillText("They finally met ❤️", WIDTH/2 - 180, HEIGHT/2);
-
-    ctx.font = "20px Arial";
-    ctx.fillText("20,000 score reached", WIDTH/2 - 120, HEIGHT/2 + 40);
-  }
-
-  // ---------------- UI ----------------
+  // UI
   ctx.fillStyle = "black";
   ctx.font = "30px Arial";
   ctx.fillText(score, 20, 40);
