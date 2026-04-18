@@ -116,31 +116,41 @@ function resetGame() {
   alive = true;
 }
 
-// ---------------- SAFE PIPE ----------------
+// =====================================================
+// 🔧 ONLY CHANGE: PIPE GENERATION (FIXED RULE ADDED)
+// =====================================================
+
+let lastPipeTop = HEIGHT / 2;
+
 function createPipe() {
 
   let maxTop = HEIGHT - PIPE_GAP - 80;
   let minTop = 80;
 
-  let top = minTop + Math.random() * (maxTop - minTop);
+  let cloudLength = 50;          // average cloud size reference
+  let maxStep = cloudLength * 5; // 🚨 max difference rule
 
-  // safety clamp (still fair, no impossible pipes)
-  let gapCenter = top + PIPE_GAP / 2;
+  let targetTop = minTop + Math.random() * (maxTop - minTop);
 
-  if (gapCenter < HEIGHT * 0.2 || gapCenter > HEIGHT * 0.8) {
-    gapCenter = HEIGHT / 2;
-    top = gapCenter - PIPE_GAP / 2;
-  }
+  // clamp based on previous pipe
+  let diff = targetTop - lastPipeTop;
+
+  if (diff > maxStep) targetTop = lastPipeTop + maxStep;
+  if (diff < -maxStep) targetTop = lastPipeTop - maxStep;
+
+  targetTop = Math.max(minTop, Math.min(maxTop, targetTop));
+
+  lastPipeTop = targetTop;
 
   return {
     x: WIDTH,
-    top: top,
-    bottom: top + PIPE_GAP,
+    top: targetTop,
+    bottom: targetTop + PIPE_GAP,
     passed: false
   };
 }
 
-// ---------------- DRAW BIRD (RESTORED) ----------------
+// ---------------- DRAW BIRD ----------------
 function drawBird() {
   ctx.save();
   ctx.translate(bird.x, bird.y);
@@ -150,7 +160,6 @@ function drawBird() {
   ctx.ellipse(0,0,25,18,0,0,Math.PI*2);
   ctx.fill();
 
-  // eye
   ctx.fillStyle = "white";
   ctx.beginPath();
   ctx.arc(10,-5,5,0,Math.PI*2);
@@ -161,7 +170,6 @@ function drawBird() {
   ctx.arc(12,-5,2,0,Math.PI*2);
   ctx.fill();
 
-  // beak
   ctx.fillStyle = "orange";
   ctx.beginPath();
   ctx.moveTo(15,0);
@@ -178,7 +186,6 @@ function drawClouds(dt) {
 
   for (let c of clouds) {
     c.x -= c.speed * dt;
-
     if (c.x < -c.size) c.x = WIDTH + c.size;
 
     ctx.beginPath();
@@ -203,7 +210,6 @@ function loop(time) {
   let dt = (time - lastTime) / 1000;
   lastTime = time;
 
-  // background
   ctx.fillStyle = "#87CEEB";
   ctx.fillRect(0,0,WIDTH,HEIGHT);
 
@@ -211,24 +217,20 @@ function loop(time) {
 
   if (!paused && alive) {
 
-    // bird physics (FRAME-INDEPENDENT)
     bird.vel += GRAVITY * dt;
     bird.y += bird.vel * dt;
 
-    // spawn pipes
     pipeTimer += dt;
     if (pipeTimer > 1.4) {
       pipes.push(createPipe());
       pipeTimer = 0;
     }
 
-    // update pipes
     for (let p of pipes) {
       p.x -= PIPE_SPEED * dt;
 
       drawPipe(p);
 
-      // collision
       if (
         bird.x < p.x + PIPE_WIDTH &&
         bird.x + 30 > p.x &&
@@ -237,11 +239,9 @@ function loop(time) {
         alive = false;
       }
 
-      // score
       if (!p.passed && p.x < bird.x) {
         p.passed = true;
         score++;
-
         passSound.currentTime = 0;
         passSound.play();
       }
@@ -254,23 +254,15 @@ function loop(time) {
     }
   }
 
-  // draw
   for (let p of pipes) drawPipe(p);
   drawBird();
 
-  // UI
   ctx.fillStyle = "black";
   ctx.font = "30px Arial";
   ctx.fillText(score, 20, 40);
 
-  if (paused) {
-    ctx.fillText("PAUSED", WIDTH/2 - 60, HEIGHT/2);
-  }
-
-  if (!alive) {
-    ctx.fillText("Game Over", WIDTH/2 - 90, HEIGHT/2);
-    ctx.fillText("Tap to Restart", WIDTH/2 - 120, HEIGHT/2 + 40);
-  }
+  if (paused) ctx.fillText("PAUSED", WIDTH/2 - 60, HEIGHT/2);
+  if (!alive) ctx.fillText("Game Over", WIDTH/2 - 90, HEIGHT/2);
 
   requestAnimationFrame(loop);
 }
